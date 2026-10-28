@@ -1,68 +1,107 @@
-# Prerequisites
-*.d
+# =====================================================================
+# Open RarZip / YasuoCompressor (Qt6 / CMake) — Git 忽略规则
+# 原则：源码、构建脚本、资源、文档入库；
+#       编译产物、发布包、下载依赖、个人 IDE 配置不入库
+# =====================================================================
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# Build directories
+# ---------------- 1. 构建输出目录 ----------------
 build/
 Build/
 build-*/
+cmake-build-*/
+out/
+_build/
+/bin/
+/obj/
 
-# CMake generated files
+# ---------------- 2. CMake 生成物 ----------------
 CMakeFiles/
 CMakeCache.txt
+CMakeScripts/
 cmake_install.cmake
-Makefile
 install_manifest.txt
 compile_commands.json
-
-# Temporary files
-*.tmp
-*.log
-*.bak
-*.swp
-
-# vcpkg
-vcpkg_installed/
-
-# debug information files
-*.dwo
-
-# test output & cache
+/Makefile
+*.ninja
+.ninja_*
 Testing/
-.cache/
+CTestTestfile.cmake
+_deps/
+/install/
+
+# ---------------- 3. Qt 中间产物 ----------------
+moc_*.cpp
+moc_*.h
+moc_predefs.h
+qrc_*.cpp
+ui_*.h
+*.moc
+*_autogen/
+a.out
+
+# ---------------- 4. 编译中间文件 ----------------
+*.o
+*.obj
+*.lo
+*.slo
+*.gch
+*.pch
+*.d
+*.dwo
+*.tlog
+*.iobj
+*.ipdb
+*.idb
+*.ilk
+*.pdb
+*.exp
+
+# ---------------- 5. 链接产物 ----------------
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.a
+*.lib
+*.out
+*.app/
+
+# ---------------- 6. IDE / 编辑器个人配置 ----------------
+.vs/
+.idea/
+*.user
+*.user.*
+.qtcreator/*.user
+*.autosave
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---------------- 7. 日志与临时文件 ----------------
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# ---------------- 8. 发布产物 ----------------
+dist/
+release/
+*.zip
+*.7z
+*.rar
+*.msi
+
+# =====================================================================
+# 9. 第三方依赖（约 120MB，均可用脚本重新拉取，不入库）
+# =====================================================================
+# vcpkg/  = 完整 vcpkg 克隆（ports/scripts/toolsrc/vcpkg.exe）
+# deps/   = 离线依赖源码 bzip2 / libarchive / xz / zstd（各自带 .git）
+#           及 deps/dist 构建产物
+# 复现方式：./build_deps_local.sh
+/vcpkg/
+/deps/
