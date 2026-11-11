@@ -1,0 +1,62 @@
+压索 Yasuo Compressor — 第三方组件与许可声明
+================================================
+
+本项目主程序采用 MIT License（见 LICENSE）。
+下列第三方组件随二进制发行或由系统提供，各自适用其原始许可。
+
+1) Qt 6 (Core / Widgets / Network / Concurrent)
+   许可：LGPL v3（部分模块 GPL v3），由 The Qt Company 双许可提供。
+   本项目以动态链接方式使用开源版 Qt，未修改 Qt 源码。
+   开源 Qt 的主要义务：
+     - 提供可重新链接 Qt 库的机制（随包提供 Qt DLL，用户可自行替换）；
+     - 随发行附 LGPL 许可副本，并明确声明使用 Qt；
+     - 提供 Qt 对应源码的获取途径（https://www.qt.io/download-open-source）；
+     - 对 Qt 组件本身的修改须回馈社区。
+   参考：https://doc.qt.io/qt-6/licensing.html
+
+2) libarchive 3.9.0
+   许可：BSD-2-Clause（另有部分文件为其它宽松许可，见其 COPYING）。
+   用途：全格式归档读写、RAR/RAR5 只读解压、ZIP WinZip AES 加密。
+   源码：https://github.com/libarchive/libarchive
+
+3) zlib
+   许可：zlib License。
+   用途：Deflate/Inflate、CRC32（含 crc32_combine）、内置回退引擎。
+   源码：https://zlib.net/
+
+4) bzip2
+   许可：BSD 类许可（见其 COPYING / LICENSE）。
+   源码：https://sourceware.org/bzip2/
+
+5) xz / liblzma
+   许可：库主体 0BSD（部分工具为 GPL，本项目仅链接库，不分发工具）。
+   源码：https://tukaani.org/xz/
+
+6) zstd
+   许可：BSD-3-Clause / GPLv2 双许可；本项目选用 BSD-3-Clause。
+   源码：https://github.com/facebook/zstd
+
+7) Windows CNG / BCrypt（操作系统 API，不随包分发）
+   用途：libarchive 的 AES 加密后端。无需额外许可文件。
+
+8) unRAR 与 RAR 格式说明（重要）
+   RAR 压缩算法为 RARLAB 专有。官方 unRAR 源码许可明确禁止
+   「用于重建 RAR 压缩算法 / 开发 WinRAR 兼容压缩器」。
+   因此本软件仅解压 RAR（由 libarchive 的独立实现提供），
+   从不生成 RAR 文件。请把 7Z 或 ZIP 作为原生输出格式。
+   本项目不包含、不链接、不分发 unRAR 或 WinRAR 的任何代码。
+
+9) 7-Zip SDK（计划中的可选后端，当前未包含）
+   若未来启用，其主体为 LGPL v2.1+，部分 BSD，RAR 解码部分带
+   unRAR 许可限制；二进制再分发必须复制其许可信息。
+   参考：https://www.7-zip.org/license.txt
+
+10) GPU 加速（可选外部插件，不随包分发）
+    NVIDIA nvCOMP SDK 许可禁止将其置于开源许可证约束下，
+    且仅允许在 NVIDIA GPU 系统上使用。本项目不链接、不捆绑、
+    不分发该 SDK，只提供 IGpuAccelerator 插件接口，由用户自行决定是否安装。
+    默认加速路径为 CPU 多线程 + SIMD，无任何专有依赖。
+
+----------------------------------------------------------------
+完整依赖与版本可通过 build_deps_local.sh 复现构建；
+各依赖的许可原文位于 deps/src/<组件>/COPYING 或 LICENSE。

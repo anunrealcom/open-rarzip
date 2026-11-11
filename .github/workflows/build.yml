@@ -1,0 +1,47 @@
+name: build-and-test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt (MinGW)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: 'win64_mingw'
+          cache: true
+
+      # 依赖源码 deps/src 不入库（约 120MB，见 .gitignore）。
+      # 此作业显式关闭 libarchive，验证「零外部依赖」路径：内置流式 ZIP/GZ 引擎
+      # 必须能完整构建并通过自测；全格式引擎由维护者/自托管 runner 执行
+      # bash build_deps_local.sh 后构建（本地已按同一脚本验证过）。
+      - name: Configure
+        shell: bash
+        run: >
+          cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DYASUO_ENABLE_LIBARCHIVE=OFF
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build/ci -j4
+
+      - name: Self test
+        shell: bash
+        run: ./build/ci/test_engine.exe
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: yasuo-windows
+          path: |
+            build/ci/YasuoCompressor.exe
+            build/ci/test_engine.exe

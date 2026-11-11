@@ -1,58 +1,175 @@
-cmake_minimum_required(VERSION 3.16)
-project(YasuoCompressor LANGUAGES CXX C)
+cmake_minimum_required(VERSION 3.20)
+project(YasuoCompressor VERSION 2.0.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
-qt_standard_project_setup()
-
-# 优先使用 libarchive（全格式：zip/7z/tar/gz/bz2/xz/zst...）；
-# 若未安装（无网络环境），回退到本地 zlib 引擎，仅支持 ZIP / GZ。
-set(ENGINE_SRC src/zipengine.cpp)
-set(EXTRA_LIB "")
-set(EXTRA_INC "")
-find_package(LibArchive QUIET)
-if(LibArchive_FOUND)
-    message(STATUS "使用 libarchive 全格式引擎")
-    set(ENGINE_SRC src/archiveengine.cpp)
-    set(EXTRA_LIB LibArchive::LibArchive)
-else()
-    message(STATUS "使用本地 zlib 引擎（ZIP / GZ）")
-    set(ZLIB_INC C:/Qt/Tools/mingw1310_64/x86_64-w64-mingw32/include)
-    set(ZLIB_LIB C:/Qt/Tools/mingw1310_64/x86_64-w64-mingw32/lib/libz.a)
-    set(EXTRA_INC ${ZLIB_INC})
-    set(EXTRA_LIB ${ZLIB_LIB})
+# 自动定位 Qt 安装前缀：不硬编码 Qt 版本与盘符，兼容 GitHub Actions 的 QT_ROOT_DIR。
+set(_qt_roots "$ENV{QT_ROOT_DIR}" "$ENV{QT_ROOT}" "D:/Qt" "C:/Qt" "E:/Qt")
+set(_qt_prefixes "")
+foreach(_root IN LISTS _qt_roots)
+    if(NOT _root)
+        continue()
+    endif()
+    file(GLOB _qt_versions "${_root}/*/mingw_64")
+    foreach(_candidate IN LISTS _qt_versions)
+        if(EXISTS "${_candidate}/lib/cmake/Qt6")
+            list(APPEND _qt_prefixes "${_candidate}")
+        endif()
+    endforeach()
+    # QT_ROOT_DIR 有时直接指向 <version>/mingw_64
+    if(EXISTS "${_root}/lib/cmake/Qt6")
+        list(APPEND _qt_prefixes "${_root}")
+    endif()
+endforeach()
+if(_qt_prefixes)
+    list(REMOVE_DUPLICATES _qt_prefixes)
+    list(SORT _qt_prefixes)
+    list(REVERSE _qt_prefixes)
+    list(GET _qt_prefixes 0 _qt_best)
+    # 把 cache/命令行传入的前缀带入普通变量，避免 list(APPEND) 覆盖用户显式指定的路径
+    set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${_qt_best}")
+    list(REMOVE_DUPLICATES CMAKE_PREFIX_PATH)
+    message(STATUS "Qt 前缀: ${_qt_best}")
 endif()
 
-add_executable(YasuoCompressor
-    src/main.cpp
-    src/mainwindow.h
-    src/mainwindow.cpp
-    src/archiveengine.h
-    src/archiveworker.h
-    src/archiveworker.cpp
-    ${ENGINE_SRC}
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent)
+qt_standard_project_setup()
+
+# ---------------- zlib ----------------
+find_package(ZLIB QUIET)
+if(NOT ZLIB_FOUND)
+    # MinGW sysroot 自带 zlib；工具链目录名带版本号，用通配扫描避免写死 mingw1310_64
+    foreach(_root IN LISTS _qt_roots)
+        if(NOT _root)
+            continue()
+        endif()
+        file(GLOB _sysroots "${_root}/Tools/mingw*/x86_64-w64-mingw32")
+        foreach(_sys IN LISTS _sysroots)
+            if(EXISTS "${_sys}/include/zlib.h" AND EXISTS "${_sys}/lib/libz.a")
+                set(ZLIB_INCLUDE_DIRS "${_sys}/include")
+                set(ZLIB_LIBRARIES "${_sys}/lib/libz.a")
+                set(ZLIB_FOUND TRUE)
+                break()
+            endif()
+        endforeach()
+        if(ZLIB_FOUND)
+            break()
+        endif()
+    endforeach()
+endif()
+if(NOT ZLIB_FOUND)
+    message(FATAL_ERROR "找不到 zlib，请安装或通过 QT_ROOT 指定 Qt 目录")
+endif()
+
+# ---------------- libarchive（本地静态优先，系统库次之，最后回退内置引擎） ----------------
+option(YASUO_ENABLE_LIBARCHIVE
+       "启用 libarchive 全格式引擎；OFF = 只编内置流式 ZIP/GZ 引擎（CI / 零外部依赖验证）" ON)
+set(YASUO_LIBARCHIVE OFF)
+set(LA_INCLUDE_DIRS "")
+set(LA_LINK_LIBS "")
+
+if(YASUO_ENABLE_LIBARCHIVE)
+    set(_dist "${CMAKE_CURRENT_SOURCE_DIR}/deps/dist")
+    if(EXISTS "${_dist}/include/archive.h" AND EXISTS "${_dist}/lib/libarchive.a")
+        set(YASUO_LIBARCHIVE ON)
+        set(LA_INCLUDE_DIRS "${_dist}/include")
+        set(LA_LINK_LIBS
+            "${_dist}/lib/libarchive.a"
+            "${_dist}/lib/liblzma.a"
+            "${_dist}/lib/libzstd.a"
+            "${_dist}/lib/libbz2.a"
+            "${ZLIB_LIBRARIES}"
+            bcrypt advapi32 xmllite)
+        message(STATUS "引擎: 本地静态 libarchive 3.9（全格式 + RAR 解压 + ZIP AES 加密）")
+    else()
+        find_package(LibArchive QUIET)
+        if(LibArchive_FOUND)
+            set(YASUO_LIBARCHIVE ON)
+            set(LA_LINK_LIBS LibArchive::LibArchive "${ZLIB_LIBRARIES}")
+            message(STATUS "引擎: 系统 libarchive")
+        endif()
+    endif()
+endif()
+if(NOT YASUO_LIBARCHIVE)
+    message(STATUS "引擎: 内置流式 ZIP/GZ（运行 build_deps_local.sh 可获得全格式）")
+endif()
+
+set(CORE_SOURCES
+    src/core/archivetypes.cpp
+    src/core/pathguard.cpp
+    src/core/accelerator.cpp
+    src/core/enginefactory.cpp
+    src/core/zlibengine.cpp
 )
+if(YASUO_LIBARCHIVE)
+    list(APPEND CORE_SOURCES src/core/libarchiveengine.cpp)
+endif()
+
+set(APP_HEADERS
+    src/ui/mainwindow.h
+    src/ui/archivebrowser.h
+    src/ui/taskrunner.h
+    src/shell/shellintegration.h
+)
+
+if(WIN32)
+    enable_language(RC)
+endif()
+
+add_executable(YasuoCompressor WIN32
+    src/main.cpp
+    src/ui/mainwindow.cpp
+    src/ui/archivebrowser.cpp
+    src/ui/taskrunner.cpp
+    src/ui/theme.cpp
+    src/shell/shellintegration.cpp
+    ${CORE_SOURCES}
+    ${APP_HEADERS}
+    src/resources.qrc
+    src/resources/app.rc
+)
+
+target_include_directories(YasuoCompressor PRIVATE
+    src src/core src/ui src/shell
+    ${LA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS}
+    src/resources)
 
 target_link_libraries(YasuoCompressor PRIVATE
-    Qt6::Core
-    Qt6::Widgets
-    Qt6::EntryPointPrivate
-    ${EXTRA_LIB}
-)
+    Qt6::Core Qt6::Widgets Qt6::Network Qt6::Concurrent
+    ${LA_LINK_LIBS} ${ZLIB_LIBRARIES})
 
-target_include_directories(YasuoCompressor PRIVATE src ${EXTRA_INC})
+if(TARGET Qt6::EntryPointPrivate)
+    target_link_libraries(YasuoCompressor PRIVATE Qt6::EntryPointPrivate)
+endif()
+
+if(YASUO_LIBARCHIVE)
+    target_compile_definitions(YasuoCompressor PRIVATE YASUO_HAVE_LIBARCHIVE)
+endif()
+
+# ---------------- 无界面自测 ----------------
+add_executable(test_engine
+    test_engine.cpp
+    ${CORE_SOURCES}
+    src/core/archivetypes.h
+    src/core/iengine.h
+    src/core/pathguard.h
+    src/core/accelerator.h
+)
+target_include_directories(test_engine PRIVATE
+    src/core ${LA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(test_engine PRIVATE
+    Qt6::Core Qt6::Concurrent
+    ${LA_LINK_LIBS} ${ZLIB_LIBRARIES})
+if(YASUO_LIBARCHIVE)
+    target_compile_definitions(test_engine PRIVATE YASUO_HAVE_LIBARCHIVE)
+endif()
 
 if(WIN32)
     set_target_properties(YasuoCompressor PROPERTIES WIN32_EXECUTABLE ON)
 endif()
 
-# 无界面自测：验证压缩/解压逻辑，并用系统 tar / PowerShell 交叉验证归档兼容性
-add_executable(test_engine test_engine.cpp ${ENGINE_SRC})
-target_include_directories(test_engine PRIVATE src ${EXTRA_INC})
-target_link_libraries(test_engine PRIVATE Qt6::Core ${EXTRA_LIB})
+include(CTest)
+add_test(NAME engine_selftest COMMAND test_engine)

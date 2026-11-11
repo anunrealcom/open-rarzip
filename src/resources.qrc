@@ -1,0 +1,10 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="app.png">resources/app.png</file>
+        <file alias="app.ico">resources/app.ico</file>
+        <file alias="logo.png">resources/logo.png</file>
+        <file alias="tray.png">resources/tray.png</file>
+        <file alias="banner.png">resources/banner.png</file>
+        <file alias="logo.svg">resources/logo.svg</file>
+    </qresource>
+</RCC>

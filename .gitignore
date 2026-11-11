@@ -105,3 +105,6 @@ release/
 # 复现方式：./build_deps_local.sh
 /vcpkg/
 /deps/
+
+# ---------------- 10. WorkBuddy 本地项目数据（含会话记忆，不入库） ----------------
+.workbuddy/

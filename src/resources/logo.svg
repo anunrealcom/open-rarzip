@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>压索 Yasuo Compressor</title>
+  <desc>三条逐级收窄的数据层被一道束带收紧，表达压缩</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#245CFF"/>
+      <stop offset="1" stop-color="#10BACD"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
+  <rect x="62" y="62" width="132" height="15" rx="7" fill="#FFFFFF" opacity="0.96"/>
+  <rect x="82" y="93" width="92" height="13" rx="6" fill="#FFFFFF" opacity="0.86"/>
+  <rect x="102" y="122" width="52" height="11" rx="5" fill="#FFFFFF" opacity="0.76"/>
+  <path d="M124 145 l-14 16 h28 z" fill="#FFFFFF" opacity="0.9"/>
+  <rect x="56" y="164" width="144" height="18" rx="9" fill="#80EEFF"/>
+  <rect x="120" y="161" width="16" height="24" rx="4" fill="#0E3060"/>
+</svg>
