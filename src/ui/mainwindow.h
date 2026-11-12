@@ -5,6 +5,7 @@
 #include <QVector>
 
 #include "archivetypes.h"
+#include "iconfactory.h"
 #include "taskrunner.h"
 
 class QStackedWidget;
@@ -26,6 +27,14 @@ namespace yasuo {
 
 class ArchiveBrowser;
 
+// 按钮图标绑定：主题切换或最大化状态变化时按角色重新着色。
+struct IconBinding {
+    QPushButton* btn = nullptr;
+    IconKind kind = IconKind::AddFile;
+    int role = 0;   // 0=次要(灰) 1=主按钮(白) 2=导航/强调色
+    int size = 18;
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -42,6 +51,7 @@ public slots:
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
+    void changeEvent(QEvent* event) override;
 #ifdef Q_OS_WIN
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 #endif
@@ -83,13 +93,19 @@ private:
     void refreshShellStatus();
     Format currentFormat() const;
     void syncCapabilityUI();
+    void setBtnIcon(QPushButton* btn, IconKind kind, int role = 0, int size = 18);
+    void refreshIcons();
+    void updateWindowIcons();
+    bool pointInButtonArea(const QPoint& globalPos) const;
 
     // 标题栏
+    QWidget* m_titleBar = nullptr;
     QPushButton* m_minBtn = nullptr;
     QPushButton* m_maxBtn = nullptr;
     QPushButton* m_closeBtn = nullptr;
     QLabel* m_themeBtn = nullptr;
     QPushButton* m_themeToggle = nullptr;
+    QVector<IconBinding> m_iconBinds;
 
     // 导航
     QButtonGroup* m_navGroup = nullptr;

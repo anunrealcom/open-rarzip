@@ -778,7 +778,7 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setApplicationName(QStringLiteral("YasuoCompressor"));
     QCoreApplication::setOrganizationName(QStringLiteral("Yasuo"));
 
-    out << "==== 压索 引擎自测 ====\n";
+    out << "==== 一幻压缩 引擎自测 ====\n";
     out << Engines::summary() << "\n\n";
 
     QTemporaryDir sampleDir;

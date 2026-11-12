@@ -27,7 +27,7 @@ struct CliOptions {
 };
 
 void printCliUsage(QTextStream& out) {
-    out << "用法: YasuoCompressor --cli <list|test|compress|extract> [选项] [参数...]\n"
+    out << "用法: 一幻压缩 --cli <list|test|compress|extract> [选项] [参数...]\n"
            "\n命令:\n"
            "  list    <归档> [密码]            列出归档内容\n"
            "  test    <归档> [密码]            完整性测试\n"
@@ -186,6 +186,7 @@ int runCli(const QStringList& rawArgs) {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("YasuoCompressor"));
+    QApplication::setApplicationDisplayName(QStringLiteral("一幻压缩"));
     QApplication::setApplicationVersion(QStringLiteral("2.0.0"));
     QApplication::setOrganizationName(QStringLiteral("Yasuo"));
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/app.png")));

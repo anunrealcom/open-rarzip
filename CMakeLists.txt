@@ -158,6 +158,7 @@ set(APP_HEADERS
     src/ui/mainwindow.h
     src/ui/archivebrowser.h
     src/ui/taskrunner.h
+    src/ui/iconfactory.h
     src/shell/shellintegration.h
 )
 
@@ -171,6 +172,7 @@ add_executable(YasuoCompressor WIN32
     src/ui/archivebrowser.cpp
     src/ui/taskrunner.cpp
     src/ui/theme.cpp
+    src/ui/iconfactory.cpp
     src/shell/shellintegration.cpp
     ${CORE_SOURCES}
     ${APP_HEADERS}

@@ -40,6 +40,8 @@
 #include <QButtonGroup>
 #include <QAbstractItemView>
 #include <QToolButton>
+#include <QFrame>
+#include <QPair>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -49,41 +51,6 @@
 using namespace yasuo;
 
 namespace {
-
-class TitleBar : public QWidget {
-public:
-    explicit TitleBar(QWidget* win, QWidget* parent = nullptr)
-        : QWidget(parent), m_win(win) {}
-    QHBoxLayout* layout = nullptr;
-protected:
-    void mousePressEvent(QMouseEvent* e) override {
-        if (e->button() == Qt::LeftButton) {
-            m_drag = e->globalPosition().toPoint() - m_win->frameGeometry().topLeft();
-            m_down = true;
-        }
-        QWidget::mousePressEvent(e);
-    }
-    void mouseMoveEvent(QMouseEvent* e) override {
-        if (m_down && (e->buttons() & Qt::LeftButton)) {
-            auto* w = qobject_cast<MainWindow*>(m_win);
-            if (w && w->isMaximized()) w->showNormal();
-            m_win->move(e->globalPosition().toPoint() - m_drag);
-        }
-        QWidget::mouseMoveEvent(e);
-    }
-    void mouseReleaseEvent(QMouseEvent*) override { m_down = false; }
-    void mouseDoubleClickEvent(QMouseEvent* e) override {
-        if (e->button() == Qt::LeftButton) {
-            if (auto* w = qobject_cast<MainWindow*>(m_win))
-                w->isMaximized() ? w->showNormal() : w->showMaximized();
-        }
-        QWidget::mouseDoubleClickEvent(e);
-    }
-private:
-    QWidget* m_win;
-    QPoint m_drag;
-    bool m_down = false;
-};
 
 QString defaultSuffix(Format f) { return formatSuffix(f); }
 
@@ -96,7 +63,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     resize(1120, 720);
     setAcceptDrops(true);
     setWindowIcon(QIcon(QStringLiteral(":/icons/app.ico")));
-    setWindowTitle(QStringLiteral("压索 · Yasuo Compressor"));
+    setWindowTitle(QStringLiteral("一幻压缩"));
     Theme::apply(Theme::isDark());
     buildUi();
     refreshEngineInfo();
@@ -117,51 +84,110 @@ MainWindow::~MainWindow() {
 }
 
 QWidget* MainWindow::buildTitleBar() {
-    auto* bar = new TitleBar(this);
+    auto* bar = new QWidget;
+    m_titleBar = bar;
     bar->setObjectName(QStringLiteral("card"));
-    bar->setFixedHeight(58);
+    bar->setFixedHeight(60);
     auto* h = new QHBoxLayout(bar);
-    bar->layout = h;
-    h->setContentsMargins(16, 0, 12, 0);
+    h->setContentsMargins(16, 0, 10, 0);
     h->setSpacing(10);
 
     auto* logo = new QLabel;
     const QPixmap pm(QStringLiteral(":/icons/logo.png"));
-    if (!pm.isNull()) logo->setPixmap(pm.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    else logo->setText(QStringLiteral("压"));
-    logo->setFixedSize(34, 34);
+    if (!pm.isNull()) logo->setPixmap(pm.scaled(30, 30, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    else logo->setText(QStringLiteral("幻"));
+    logo->setFixedSize(32, 32);
+    logo->setAlignment(Qt::AlignCenter);
+    logo->setObjectName(QStringLiteral("brandLogo"));
     h->addWidget(logo);
 
-    auto* brand = new QLabel(QStringLiteral("压索  Yasuo Compressor"));
+    auto* brandBox = new QVBoxLayout;
+    brandBox->setSpacing(1);
+    auto* brand = new QLabel(QStringLiteral("一幻压缩"));
     brand->setObjectName(QStringLiteral("brandLabel"));
-    h->addWidget(brand);
-    auto* sub = new QLabel(QStringLiteral("开源 · 免费 · 全格式"));
+    auto* sub = new QLabel(QStringLiteral("Yihuan Compressor · 开源 · 免费 · 全格式"));
     sub->setObjectName(QStringLiteral("hintLabel"));
-    h->addWidget(sub);
+    brandBox->addWidget(brand);
+    brandBox->addWidget(sub);
+    h->addLayout(brandBox);
     h->addStretch(1);
 
-    m_themeToggle = new QPushButton(Theme::isDark() ? QStringLiteral("浅色") : QStringLiteral("深色"));
+    m_themeToggle = new QPushButton;
     m_themeToggle->setObjectName(QStringLiteral("winBtn"));
-    m_themeToggle->setFixedSize(52, 28);
+    m_themeToggle->setFixedSize(34, 30);
+    m_themeToggle->setToolTip(QStringLiteral("切换深色 / 浅色主题"));
+    m_themeToggle->setCursor(Qt::PointingHandCursor);
     h->addWidget(m_themeToggle);
 
-    m_minBtn = new QPushButton(QStringLiteral("—"));
-    m_maxBtn = new QPushButton(QStringLiteral("□"));
-    m_closeBtn = new QPushButton(QStringLiteral("✕"));
+    auto* sep = new QFrame;
+    sep->setObjectName(QStringLiteral("titleSep"));
+    sep->setFixedSize(1, 22);
+    h->addWidget(sep);
+
+    m_minBtn = new QPushButton;
+    m_maxBtn = new QPushButton;
+    m_closeBtn = new QPushButton;
     for (QPushButton* b : { m_minBtn, m_maxBtn, m_closeBtn }) {
         b->setObjectName(b == m_closeBtn ? QStringLiteral("closeBtn") : QStringLiteral("winBtn"));
-        b->setFixedSize(34, 28);
+        b->setFixedSize(36, 30);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setIconSize(QSize(16, 16));
     }
+    m_minBtn->setToolTip(QStringLiteral("最小化"));
+    m_maxBtn->setToolTip(QStringLiteral("最大化 / 还原"));
+    m_closeBtn->setToolTip(QStringLiteral("关闭"));
     h->addWidget(m_minBtn); h->addWidget(m_maxBtn); h->addWidget(m_closeBtn);
 
     connect(m_themeToggle, &QPushButton::clicked, this, &MainWindow::onToggleTheme);
-    connect(m_minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
+    connect(m_minBtn, &QPushButton::clicked, this, [this]() { showMinimized(); });
     connect(m_maxBtn, &QPushButton::clicked, this, [this]() {
-        isMaximized() ? showNormal() : showMaximized();
-        m_maximized = isMaximized();
+        if (isMaximized()) showNormal(); else showMaximized();
+        updateWindowIcons();
     });
-    connect(m_closeBtn, &QPushButton::clicked, this, &QWidget::close);
+    connect(m_closeBtn, &QPushButton::clicked, this, [this]() { close(); });
+
+    updateWindowIcons();
     return bar;
+}
+
+void MainWindow::setBtnIcon(QPushButton* btn, IconKind kind, int role, int size) {
+    if (!btn) return;
+    m_iconBinds.append(IconBinding{ btn, kind, role, size });
+    const Theme::Palette p = Theme::palette(Theme::isDark());
+    const QColor color = role == 1 ? QColor(Qt::white)
+                       : role == 2 ? QColor(p.accent)
+                                   : QColor(p.sub);
+    btn->setIcon(Icons::make(kind, color, size));
+    btn->setIconSize(QSize(size, size));
+}
+
+void MainWindow::refreshIcons() {
+    const Theme::Palette p = Theme::palette(Theme::isDark());
+    for (const IconBinding& b : m_iconBinds) {
+        if (!b.btn) continue;
+        const QColor color = b.role == 1 ? QColor(Qt::white)
+                           : b.role == 2 ? QColor(p.accent)
+                                         : QColor(p.sub);
+        b.btn->setIcon(Icons::make(b.kind, color, b.size));
+        b.btn->setIconSize(QSize(b.size, b.size));
+    }
+}
+
+void MainWindow::updateWindowIcons() {
+    const Theme::Palette p = Theme::palette(Theme::isDark());
+    const QColor c(p.sub);
+    if (m_minBtn) m_minBtn->setIcon(Icons::make(IconKind::Minimize, c, 16));
+    if (m_maxBtn) m_maxBtn->setIcon(Icons::make(isMaximized() ? IconKind::Restore
+                                                              : IconKind::Maximize, c, 16));
+    if (m_closeBtn) m_closeBtn->setIcon(Icons::make(IconKind::Close, c, 16));
+    if (m_themeToggle) m_themeToggle->setIcon(Icons::make(
+        Theme::isDark() ? IconKind::Sun : IconKind::Moon, c, 16));
+}
+
+void MainWindow::changeEvent(QEvent* event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange)
+        updateWindowIcons();
 }
 
 void MainWindow::buildUi() {
@@ -185,15 +211,19 @@ void MainWindow::buildUi() {
     navLayout->setSpacing(6);
     m_navGroup = new QButtonGroup(this);
     m_navGroup->setExclusive(true);
-    const QStringList navItems = {
-        QStringLiteral("  压缩文件"), QStringLiteral("  归档浏览"),
-        QStringLiteral("  任务进度"), QStringLiteral("  设置")
+    const QVector<QPair<QString, IconKind>> navItems = {
+        { QStringLiteral("压缩文件"), IconKind::NavCompress },
+        { QStringLiteral("归档浏览"), IconKind::NavArchive },
+        { QStringLiteral("任务进度"), IconKind::NavTask },
+        { QStringLiteral("设置"),     IconKind::NavSettings },
     };
     for (int i = 0; i < navItems.size(); ++i) {
-        auto* b = new QPushButton(navItems.at(i));
+        auto* b = new QPushButton(navItems.at(i).first);
         b->setObjectName(QStringLiteral("navBtn"));
         b->setCheckable(true);
-        b->setMinimumHeight(42);
+        b->setMinimumHeight(44);
+        b->setCursor(Qt::PointingHandCursor);
+        setBtnIcon(b, navItems.at(i).second, 2, 18);
         m_navGroup->addButton(b, i);
         navLayout->addWidget(b);
     }
@@ -257,10 +287,16 @@ QWidget* MainWindow::buildCompressPage() {
     m_fileList->setMinimumHeight(180);
     lc->addWidget(m_fileList);
     auto* row = new QHBoxLayout;
+    row->setSpacing(8);
     auto* addF = new QPushButton(QStringLiteral("添加文件"));
     auto* addD = new QPushButton(QStringLiteral("添加文件夹"));
     auto* rm = new QPushButton(QStringLiteral("移除"));
     auto* clr = new QPushButton(QStringLiteral("清空"));
+    for (QPushButton* b : { addF, addD, rm, clr }) b->setCursor(Qt::PointingHandCursor);
+    setBtnIcon(addF, IconKind::AddFile, 0, 16);
+    setBtnIcon(addD, IconKind::AddFolder, 0, 16);
+    setBtnIcon(rm, IconKind::Remove, 0, 16);
+    setBtnIcon(clr, IconKind::Clear, 0, 16);
     row->addWidget(addF); row->addWidget(addD); row->addWidget(rm); row->addWidget(clr);
     row->addStretch(1);
     lc->addLayout(row);
@@ -342,6 +378,8 @@ QWidget* MainWindow::buildCompressPage() {
     m_outputEdit = new QLineEdit;
     m_outputEdit->setPlaceholderText(QStringLiteral("留空则根据第一个输入自动生成"));
     auto* browse = new QPushButton(QStringLiteral("浏览…"));
+    browse->setCursor(Qt::PointingHandCursor);
+    setBtnIcon(browse, IconKind::Browse, 0, 16);
     outRow->addWidget(m_outputEdit, 1);
     outRow->addWidget(browse);
     v->addLayout(outRow);
@@ -356,6 +394,8 @@ QWidget* MainWindow::buildCompressPage() {
     m_startBtn = new QPushButton(QStringLiteral("开始压缩"));
     m_startBtn->setObjectName(QStringLiteral("primary"));
     m_startBtn->setMinimumWidth(160);
+    m_startBtn->setCursor(Qt::PointingHandCursor);
+    setBtnIcon(m_startBtn, IconKind::Start, 1, 16);
     actionRow->addWidget(m_startBtn);
     v->addLayout(actionRow);
 
@@ -401,6 +441,8 @@ QWidget* MainWindow::buildTaskPage() {
     m_cancelBtn = new QPushButton(QStringLiteral("取消任务"));
     m_cancelBtn->setObjectName(QStringLiteral("danger"));
     m_cancelBtn->setEnabled(false);
+    m_cancelBtn->setCursor(Qt::PointingHandCursor);
+    setBtnIcon(m_cancelBtn, IconKind::Cancel, 0, 16);
     btnRow->addWidget(m_cancelBtn);
     c->addLayout(btnRow);
     v->addWidget(card);
@@ -440,6 +482,8 @@ QWidget* MainWindow::buildSettingsPage() {
     m_accelDetail->setWordWrap(true);
     lc->addWidget(m_accelDetail);
     auto* bench = new QPushButton(QStringLiteral("运行校验吞吐基准"));
+    bench->setCursor(Qt::PointingHandCursor);
+    setBtnIcon(bench, IconKind::NavTask, 0, 16);
     lc->addWidget(bench);
     m_benchResult = new QLabel(QStringLiteral("尚未运行"));
     m_benchResult->setObjectName(QStringLiteral("subLabel"));
@@ -453,7 +497,11 @@ QWidget* MainWindow::buildSettingsPage() {
     auto* shellRow = new QHBoxLayout;
     auto* install = new QPushButton(QStringLiteral("安装右键菜单"));
     install->setObjectName(QStringLiteral("primary"));
+    install->setCursor(Qt::PointingHandCursor);
     auto* uninstall = new QPushButton(QStringLiteral("卸载"));
+    uninstall->setCursor(Qt::PointingHandCursor);
+    setBtnIcon(install, IconKind::Check, 1, 16);
+    setBtnIcon(uninstall, IconKind::Remove, 0, 16);
     shellRow->addWidget(install);
     shellRow->addWidget(uninstall);
     lc->addLayout(shellRow);
@@ -473,7 +521,7 @@ QWidget* MainWindow::buildSettingsPage() {
     rc->addSpacing(8);
     rc->addWidget(new QLabel(QStringLiteral("关于")));
     auto* about = new QLabel(QStringLiteral(
-        "压索 Yasuo Compressor · 开源免费压缩软件\n"
+        "一幻压缩 · 开源免费压缩软件\n"
         "MIT 许可证 · Qt 6 (LGPLv3) · libarchive (BSD)\n\n"
         "RAR 为 RARLAB 专有格式：本软件仅解压 RAR，不会生成 RAR，"
         "这是遵守 unRAR 许可的主动设计。要创建高压缩率归档请使用 7Z 或 ZIP。\n\n"
@@ -692,7 +740,8 @@ void MainWindow::onToggleTheme() {
     const bool dark = !Theme::isDark();
     Theme::setDark(dark);
     Theme::apply(dark);
-    m_themeToggle->setText(dark ? QStringLiteral("浅色") : QStringLiteral("深色"));
+    refreshIcons();
+    updateWindowIcons();
 }
 
 void MainWindow::onAccelChanged(int index) {
@@ -901,25 +950,56 @@ void MainWindow::dropEvent(QDropEvent* event) {
 }
 
 #ifdef Q_OS_WIN
+bool MainWindow::pointInButtonArea(const QPoint& gp) const {
+    if (!m_titleBar) return false;
+    auto inWidget = [](QWidget* w, const QPoint& p) -> bool {
+        if (!w || !w->isVisible()) return false;
+        QRect r = w->rect();
+        r.moveTopLeft(w->mapToGlobal(QPoint(0, 0)));
+        return r.contains(p);
+    };
+    if (!inWidget(m_titleBar, gp)) return false;
+    for (QPushButton* b : m_titleBar->findChildren<QPushButton*>())
+        if (inWidget(b, gp)) return true;
+    return false;
+}
+
 bool MainWindow::nativeEvent(const QByteArray&, void* message, qintptr* result) {
     MSG* msg = static_cast<MSG*>(message);
-    if (msg->message == WM_NCHITTEST) {
+    if (msg->message != WM_NCHITTEST) return false;
+
+    const QPoint gp(GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam));
+    const QRect win = frameGeometry();
+
+    // 1) 标题栏内的按钮等交互控件：交回 Qt，保证点击/悬停有效。
+    //    旧实现只对边框返回命中码、其余置 0 后 return false，导致无边框窗口下
+    //    标题栏按钮收不到鼠标事件（最小化/最大化/关闭全部失效）。
+    if (pointInButtonArea(gp)) { *result = HTCLIENT; return true; }
+
+    // 2) 非最大化时，四边/四角用于原生缩放
+    if (!isMaximized()) {
         const int border = 6;
-        const QPoint g(GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam));
-        const QRect r = frameGeometry();
-        const bool l = g.x() <= r.left() + border, rr = g.x() >= r.right() - border;
-        const bool t = g.y() <= r.top() + border, b = g.y() >= r.bottom() - border;
-        *result = 0;
-        if (l && t) *result = HTTOPLEFT;
-        else if (l && b) *result = HTBOTTOMLEFT;
-        else if (rr && t) *result = HTTOPRIGHT;
-        else if (rr && b) *result = HTBOTTOMRIGHT;
-        else if (l) *result = HTLEFT;
-        else if (rr) *result = HTRIGHT;
-        else if (t) *result = HTTOP;
-        else if (b) *result = HTBOTTOM;
-        if (*result) return true;
+        const bool l = gp.x() <= win.left() + border, rr = gp.x() >= win.right() - border;
+        const bool t = gp.y() <= win.top() + border, b = gp.y() >= win.bottom() - border;
+        if (l && t) { *result = HTTOPLEFT; return true; }
+        if (l && b) { *result = HTBOTTOMLEFT; return true; }
+        if (rr && t) { *result = HTTOPRIGHT; return true; }
+        if (rr && b) { *result = HTBOTTOMRIGHT; return true; }
+        if (l)  { *result = HTLEFT; return true; }
+        if (rr) { *result = HTRIGHT; return true; }
+        if (t)  { *result = HTTOP; return true; }
+        if (b)  { *result = HTBOTTOM; return true; }
     }
-    return false;
+
+    // 3) 标题栏空白区域：作为原生拖动区（双击可最大化，与系统一致）
+    if (m_titleBar) {
+        QRect tb = m_titleBar->rect();
+        tb.moveTopLeft(m_titleBar->mapToGlobal(QPoint(0, 0)));
+        if (tb.contains(gp)) { *result = HTCAPTION; return true; }
+    }
+
+    // 4) 其余客户区
+    *result = HTCLIENT;
+    return true;
 }
 #endif

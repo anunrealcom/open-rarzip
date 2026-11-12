@@ -35,11 +35,11 @@ QString iconValue() {
 QVector<MenuDef> menuDefs() {
     QVector<MenuDef> v;
     v.append({ QStringLiteral("*/shell/Yasuo.Compress"),
-               QStringLiteral("用 压索 压缩…"), QStringLiteral("--quick-compress") });
+               QStringLiteral("用 一幻压缩 压缩…"), QStringLiteral("--quick-compress") });
     v.append({ QStringLiteral("*/shell/Yasuo.Open"),
-               QStringLiteral("用 压索 浏览压缩包"), QStringLiteral("--open") });
+               QStringLiteral("用 一幻压缩 浏览压缩包"), QStringLiteral("--open") });
     v.append({ QStringLiteral("Directory/shell/Yasuo.Compress"),
-               QStringLiteral("用 压索 压缩此文件夹"), QStringLiteral("--quick-compress") });
+               QStringLiteral("用 一幻压缩 压缩此文件夹"), QStringLiteral("--quick-compress") });
     return v;
 }
 
@@ -91,7 +91,7 @@ QStringList ShellIntegration::menuLabels() {
     QStringList labels;
     for (const MenuDef& m : menuDefs()) labels.append(m.label);
     labels.append(QStringLiteral("归档文件 → 解压到同名文件夹（12 种扩展名）"));
-    labels.append(QStringLiteral("归档文件 → 打开方式：压索"));
+    labels.append(QStringLiteral("归档文件 → 打开方式：一幻压缩"));
     return labels;
 }
 
@@ -127,7 +127,7 @@ bool ShellIntegration::install(QString& err) {
     // 2) 归档扩展名专属「解压到同名文件夹」
     for (const QString& ext : archiveExtensions()) {
         const QString key = classes + QStringLiteral("SystemFileAssociations/%1/shell/Yasuo.Extract").arg(ext);
-        regSet(HKEY_CURRENT_USER, key, QString(), QStringLiteral("解压到同名文件夹（压索）"));
+        regSet(HKEY_CURRENT_USER, key, QString(), QStringLiteral("解压到同名文件夹（一幻压缩）"));
         regSet(HKEY_CURRENT_USER, key, QStringLiteral("Icon"), iconValue());
         if (!regSet(HKEY_CURRENT_USER, key + QStringLiteral("/command"), QString(),
                     exeCommand(QStringLiteral("--quick-extract")))) {
