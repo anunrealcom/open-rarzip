@@ -24,7 +24,10 @@ void TaskRunner::run() {
     timer.start();
     QString err;
     bool ok = false;
-    IArchiveEngine* engine = Engines::best();
+    // 压缩需要可写引擎（主引擎）；读取/测试/删除按归档类型分派（7z/RAR 走 7-Zip 后端）
+    IArchiveEngine* engine = (m_req.kind == JobKind::Compress)
+        ? Engines::best()
+        : Engines::best(m_req.archivePath);
 
     const CancelFn cancel = [this]() { return m_cancel.load(); };
     const ProgressFn progress = [this](qint64 done, qint64 total, const QString& cur) {

@@ -97,6 +97,49 @@ if(NOT YASUO_LIBARCHIVE)
     message(STATUS "引擎: 内置流式 ZIP/GZ（运行 build_deps_local.sh 可获得全格式）")
 endif()
 
+# ---------------- 7-Zip SDK 后端（运行时加载 7z.dll；仅读取 RAR/7z） ----------------
+# 复用 7-Zip 的客户端辅助源（与官方 Client7z 一致的最小集）编译进本进程，
+# 仅通过 LoadLibrary 动态加载 Format7zF 的 7z.dll，不引入 7-Zip 的编解码器源码。
+option(YASUO_ENABLE_SEVENZIP
+       "启用 7-Zip SDK 后端（仅读取：RAR/RAR5 解压、7z AES/加密文件名/固实/分卷）" ON)
+set(YASUO_SEVENZIP OFF)
+set(SZ_INCLUDE_DIRS "")
+set(SZ_SOURCES "")
+if(YASUO_ENABLE_SEVENZIP)
+    set(_7z_root "${CMAKE_CURRENT_SOURCE_DIR}/deps/src/7z/extracted")
+    if(EXISTS "${_7z_root}/CPP/Common/Common.h" AND
+       EXISTS "${_7z_root}/CPP/7zip/Bundles/Format7zF/_o/7z.dll")
+        set(YASUO_SEVENZIP ON)
+        set(SZ_INCLUDE_DIRS "${_7z_root}" "${_7z_root}/CPP")
+        set(SZ_7Z_DLL "${_7z_root}/CPP/7zip/Bundles/Format7zF/_o/7z.dll")
+        # 注意：这些 .cpp/.c 各自以 #include "StdAfx.h" 开头，StdAfx.h 会按相对路径
+        # 引入 7-Zip 自己的 Common/Common.h，因此只需把 <7z>/CPP 加入包含路径即可。
+        set(SZ_SOURCES
+            "${_7z_root}/C/Alloc.c"
+            "${_7z_root}/CPP/Common/IntToString.cpp"
+            "${_7z_root}/CPP/Common/MyString.cpp"
+            "${_7z_root}/CPP/Common/MyVector.cpp"
+            "${_7z_root}/CPP/Common/NewHandler.cpp"
+            "${_7z_root}/CPP/Common/StringConvert.cpp"
+            "${_7z_root}/CPP/Common/StringToInt.cpp"
+            "${_7z_root}/CPP/Common/UTFConvert.cpp"
+            "${_7z_root}/CPP/Common/Wildcard.cpp"
+            "${_7z_root}/CPP/Windows/DLL.cpp"
+            "${_7z_root}/CPP/Windows/FileDir.cpp"
+            "${_7z_root}/CPP/Windows/FileFind.cpp"
+            "${_7z_root}/CPP/Windows/FileIO.cpp"
+            "${_7z_root}/CPP/Windows/FileName.cpp"
+            "${_7z_root}/CPP/Windows/PropVariant.cpp"
+            "${_7z_root}/CPP/Windows/PropVariantConv.cpp"
+            "${_7z_root}/CPP/Windows/TimeUtils.cpp"
+            "${_7z_root}/CPP/7zip/Common/FileStreams.cpp"
+            src/core/sevenzip/sevenzip_wrap.cpp)
+        message(STATUS "引擎: 7-Zip SDK 后端（运行时加载 7z.dll，仅读取）")
+    else()
+        message(STATUS "引擎: 未找到 7-Zip 源码/7z.dll，跳过 7-Zip 后端（deps/src/7z/extracted）")
+    endif()
+endif()
+
 set(CORE_SOURCES
     src/core/archivetypes.cpp
     src/core/pathguard.cpp
@@ -106,6 +149,9 @@ set(CORE_SOURCES
 )
 if(YASUO_LIBARCHIVE)
     list(APPEND CORE_SOURCES src/core/libarchiveengine.cpp)
+endif()
+if(YASUO_SEVENZIP)
+    list(APPEND CORE_SOURCES src/core/sevenzipengine.cpp ${SZ_SOURCES})
 endif()
 
 set(APP_HEADERS
@@ -134,7 +180,7 @@ add_executable(YasuoCompressor WIN32
 
 target_include_directories(YasuoCompressor PRIVATE
     src src/core src/ui src/shell
-    ${LA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS}
+    ${LA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${SZ_INCLUDE_DIRS}
     src/resources)
 
 target_link_libraries(YasuoCompressor PRIVATE
@@ -148,6 +194,13 @@ endif()
 if(YASUO_LIBARCHIVE)
     target_compile_definitions(YasuoCompressor PRIVATE YASUO_HAVE_LIBARCHIVE)
 endif()
+if(YASUO_SEVENZIP)
+    target_compile_definitions(YasuoCompressor PRIVATE YASUO_HAVE_SEVENZIP)
+    # 7-Zip 客户端辅助代码所需的系统 COM/Win32 库
+    target_link_libraries(YasuoCompressor PRIVATE ole32 oleaut32 uuid advapi32 user32)
+    # 抑制第三方 7-Zip 辅助源产生的告警
+    set_source_files_properties(${SZ_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+endif()
 
 # ---------------- 无界面自测 ----------------
 add_executable(test_engine
@@ -159,12 +212,16 @@ add_executable(test_engine
     src/core/accelerator.h
 )
 target_include_directories(test_engine PRIVATE
-    src/core ${LA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
+    src/core ${LA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${SZ_INCLUDE_DIRS})
 target_link_libraries(test_engine PRIVATE
     Qt6::Core Qt6::Concurrent
     ${LA_LINK_LIBS} ${ZLIB_LIBRARIES})
 if(YASUO_LIBARCHIVE)
     target_compile_definitions(test_engine PRIVATE YASUO_HAVE_LIBARCHIVE)
+endif()
+if(YASUO_SEVENZIP)
+    target_compile_definitions(test_engine PRIVATE YASUO_HAVE_SEVENZIP)
+    target_link_libraries(test_engine PRIVATE ole32 oleaut32 uuid advapi32 user32)
 endif()
 
 if(WIN32)
@@ -173,3 +230,15 @@ endif()
 
 include(CTest)
 add_test(NAME engine_selftest COMMAND test_engine)
+
+# 将 7z.dll 随构建产物部署到运行时目录（7-Zip 后端运行时加载）
+if(YASUO_SEVENZIP AND EXISTS "${SZ_7Z_DLL}")
+    add_custom_command(TARGET YasuoCompressor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SZ_7Z_DLL}"
+                "$<TARGET_FILE_DIR:YasuoCompressor>/7z.dll"
+        COMMENT "部署 7z.dll 到可执行文件目录")
+    add_custom_command(TARGET test_engine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SZ_7Z_DLL}"
+                "$<TARGET_FILE_DIR:test_engine>/7z.dll"
+        COMMENT "部署 7z.dll 到测试程序目录")
+endif()

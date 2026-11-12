@@ -14,9 +14,14 @@
 #include <zlib.h>
 #include <algorithm>
 
+#include "sevenzip/sevenzip_wrap.h"
+
 using namespace yasuo;
 
-namespace yasuo { IArchiveEngine* createZlibEngine(); }
+namespace yasuo {
+IArchiveEngine* createZlibEngine();
+IArchiveEngine* createSevenZipEngine();
+}
 
 namespace {
 
@@ -556,6 +561,111 @@ void testLargeFile(IArchiveEngine* engine) {
     out << "       耗时 " << t.elapsed() << " ms\n";
 }
 
+// 7-Zip 只读后端端到端验证：用 szCreate7z（经 7z.dll 的 IOutArchive）造真实 7z
+// 样本，再经 SevenZipEngine（或按魔数分派的引擎）读回，覆盖 list/extract/test
+// 以及「加密内容 + 加密文件名」场景。直接驱动 7z.dll 能证明后端不是空壳。
+void testSevenZipBackend() {
+    // szCreate7z 直接调用 g_lib.createObject，必须先加载 7z.dll（随可执行文件部署）。
+    if (!sevenzip::szInit(QCoreApplication::applicationDirPath().toUtf8().constData())) {
+        out << "[SKIP] 7z.dll 不可用，跳过 7-Zip 后端端到端测试\n";
+        return;
+    }
+
+    QTemporaryDir tmp;
+    const QString srcDir = tmp.path() + QStringLiteral("/src");
+    QDir().mkpath(srcDir + QStringLiteral("/sub"));
+    const QByteArray fileA(4096, 'A');
+    const QByteArray cnData("中文内容测试\n");
+    const QByteArray bData("second file content\n");
+    writeFile(srcDir + QStringLiteral("/a.txt"), fileA);
+    writeFile(srcDir + QStringLiteral("/中文 文件名.txt"), cnData);
+    writeFile(srcDir + QStringLiteral("/sub/b.txt"), bData);
+
+    std::vector<sevenzip::SzCreateItem> items;
+    items.push_back({ L"a.txt", (srcDir + QStringLiteral("/a.txt")).toStdWString(), false, (uint64_t)fileA.size() });
+    items.push_back({ L"中文 文件名.txt", (srcDir + QStringLiteral("/中文 文件名.txt")).toStdWString(), false, (uint64_t)cnData.size() });
+    items.push_back({ L"sub/b.txt", (srcDir + QStringLiteral("/sub/b.txt")).toStdWString(), false, (uint64_t)bData.size() });
+
+    // ---- 明文 7z ----
+    const QString plain7z = tmp.path() + QStringLiteral("/plain.7z");
+    std::wstring werr;
+    check(QStringLiteral("7-Zip 后端: szCreate7z 生成明文 7z"),
+          sevenzip::szCreate7z(items, plain7z.toStdWString(), L"", false, werr),
+          QString::fromWCharArray(werr.c_str()));
+    if (!QFile::exists(plain7z)) return;
+
+    IArchiveEngine* sz = createSevenZipEngine();
+    check(QStringLiteral("7-Zip 后端: 按魔数分派到 7-Zip 引擎"),
+          Engines::best(plain7z)->caps().id == QStringLiteral("7zip"));
+
+    {
+        ArchiveInfo info; QString err;
+        check(QStringLiteral("7-Zip 后端: 列出明文 7z"),
+              sz->list(plain7z, QString(), info, err) && info.entryCount == 3, err);
+        bool hasCn = false;
+        for (const EntryInfo& e : info.entries)
+            if (e.path.contains(QStringLiteral("中文"))) hasCn = true;
+        check(QStringLiteral("7-Zip 后端: 中文条目名可读取"), hasCn);
+    }
+    {
+        ExtractOptions eo; eo.archivePath = plain7z;
+        eo.destDir = tmp.path() + QStringLiteral("/un_plain");
+        eo.overwrite = OverwritePolicy::Overwrite;
+        QString err;
+        check(QStringLiteral("7-Zip 后端: 解压明文 7z"), sz->extract(eo, {}, {}, err), err);
+        check(QStringLiteral("7-Zip 后端: 解压内容一致(a.txt)"),
+              readFile(eo.destDir + QStringLiteral("/a.txt")) == fileA);
+        check(QStringLiteral("7-Zip 后端: 解压内容一致(中文)"),
+              readFile(eo.destDir + QStringLiteral("/中文 文件名.txt")) == cnData);
+    }
+    {
+        QString err;
+        check(QStringLiteral("7-Zip 后端: 完整性测试(明文)"),
+              sz->test(plain7z, QString(), {}, {}, err), err);
+    }
+
+    // ---- 加密 7z（AES 内容 + 加密文件名 "he"）----
+    const QString enc7z = tmp.path() + QStringLiteral("/enc.7z");
+    const QString pw = QStringLiteral("Yasuo-7z-2026");
+    werr.clear();
+    check(QStringLiteral("7-Zip 后端: szCreate7z 生成加密 7z(含文件名加密)"),
+          sevenzip::szCreate7z(items, enc7z.toStdWString(), pw.toStdWString(), true, werr),
+          QString::fromWCharArray(werr.c_str()));
+    if (!QFile::exists(enc7z)) return;
+
+    {
+        ArchiveInfo info; QString err;
+        check(QStringLiteral("7-Zip 后端: 带密码列出加密 7z"),
+              sz->list(enc7z, pw, info, err) && info.entryCount == 3, err);
+        bool allEnc = true;
+        for (const EntryInfo& e : info.entries) if (!e.encrypted) allEnc = false;
+        check(QStringLiteral("7-Zip 后端: 加密 7z 条目标记为 encrypted"), allEnc);
+    }
+    {
+        ExtractOptions eo; eo.archivePath = enc7z;
+        eo.destDir = tmp.path() + QStringLiteral("/bad");
+        eo.overwrite = OverwritePolicy::Overwrite;
+        QString err;
+        check(QStringLiteral("7-Zip 后端: 无密码解压加密 7z 被拒绝"),
+              !sz->extract(eo, {}, {}, err), err);
+    }
+    {
+        ExtractOptions eo; eo.archivePath = enc7z;
+        eo.destDir = tmp.path() + QStringLiteral("/un_enc");
+        eo.overwrite = OverwritePolicy::Overwrite;
+        eo.password = pw;
+        QString err;
+        check(QStringLiteral("7-Zip 后端: 正确密码解压加密 7z"), sz->extract(eo, {}, {}, err), err);
+        check(QStringLiteral("7-Zip 后端: 加密解压内容一致(中文)"),
+              readFile(eo.destDir + QStringLiteral("/中文 文件名.txt")) == cnData);
+    }
+    {
+        QString err;
+        check(QStringLiteral("7-Zip 后端: 完整性测试(加密)"),
+              sz->test(enc7z, pw, {}, {}, err), err);
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -590,6 +700,9 @@ int main(int argc, char* argv[]) {
     testExternalUtf8Names(best, QStringLiteral("主引擎"));
     if (best != createZlibEngine())
         testExternalUtf8Names(createZlibEngine(), QStringLiteral("内置引擎"));
+
+    // 7-Zip 只读后端：用 7z.dll 现场造档并读回，验证后端真正可用
+    testSevenZipBackend();
 
     out << "\n==== RESULT: " << (failed == 0 ? "ALL PASS" : "FAIL")
         << " (" << passed << " passed, " << failed << " failed) ====\n";

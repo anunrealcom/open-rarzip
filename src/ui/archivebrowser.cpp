@@ -224,7 +224,7 @@ void ArchiveBrowser::openArchive(const QString& path) {
     QApplication::setOverrideCursor(Qt::WaitCursor);
     QString err;
     ArchiveInfo info;
-    const bool ok = Engines::best()->list(path, m_passwordEdit->text(), info, err);
+    const bool ok = Engines::best(path)->list(path, m_passwordEdit->text(), info, err);
     QApplication::restoreOverrideCursor();
     if (!ok) {
         m_summary->setText(QStringLiteral("打开失败: %1").arg(err));
@@ -236,7 +236,7 @@ void ArchiveBrowser::openArchive(const QString& path) {
     m_info = info;
     m_model->setEntries(info.entries);
     // 包内删除只支持可重写格式；加密归档与 RAR（只读）必须禁用，避免静默降级
-    m_deleteBtn->setEnabled(Engines::best()->caps().editable && !info.encrypted &&
+    m_deleteBtn->setEnabled(Engines::best(path)->caps().editable && !info.encrypted &&
                             info.format != Format::Rar &&
                             info.format != Format::Unknown);
     updateSummary();
@@ -324,7 +324,7 @@ void ArchiveBrowser::preview(const EntryInfo& entry) {
     opt.overwrite = OverwritePolicy::Overwrite;
     opt.verifyCrc = false;
     QString err;
-    if (!Engines::best()->extract(opt, {}, {}, err)) {
+    if (!Engines::best(opt.archivePath)->extract(opt, {}, {}, err)) {
         m_preview->setPlainText(QStringLiteral("预览失败: %1").arg(err));
         return;
     }

@@ -47,6 +47,8 @@ class Engines {
 public:
     // 返回当前构建中可用的最佳引擎（调用方不持有所有权）。
     static IArchiveEngine* best();
+    // 按归档类型返回最合适引擎：7z / RAR 优先走 7-Zip 后端（若可用），其余走主引擎。
+    static IArchiveEngine* best(const QString& archivePath);
     // 所有可用引擎的能力描述，供设置页展示。
     static QVector<EngineCaps> availableCaps();
     static QStringList writableFormatLabels();
