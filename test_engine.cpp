@@ -561,6 +561,111 @@ void testLargeFile(IArchiveEngine* engine) {
     out << "       耗时 " << t.elapsed() << " ms\n";
 }
 
+bool containsBytes(const QByteArray& hay, const QByteArray& needle) {
+    return hay.indexOf(needle) >= 0;
+}
+
+// ZIP64 结构验证：libarchive 的 zip:zip64 非空值会强制生成 ZIP64 记录。
+// 这里断言产出的包确实含 ZIP64 EOCD（0x06064b50）与定位器（0x07064b50），
+// 自读回内容一致，且系统 bsdtar 能识别——证明 ZIP64 输出结构与跨工具兼容性。
+// 真正的 >4GiB 长度算术压测见 testZip64Large（需 YASUO_STRESS_ZIP64=1）。
+void testZip64(IArchiveEngine* engine, const QString& src) {
+    if (!engine->caps().zip64) {
+        out << "[SKIP] 当前引擎未声明 ZIP64 支持，跳过\n";
+        return;
+    }
+    QTemporaryDir tmp;
+    const QString zip = tmp.path() + QStringLiteral("/forced-zip64.zip");
+    CompressOptions co;
+    co.archivePath = zip;
+    co.inputs = QStringList{ src };
+    co.format = Format::Zip;
+    co.level = 1;
+    co.forceZip64 = true;
+    QString err;
+    const bool made = engine->compress(co, {}, {}, err);
+    check(QStringLiteral("ZIP64: 强制 ZIP64 压缩"), made, err);
+    if (!made) return;
+
+    const QByteArray raw = readFile(zip);
+    check(QStringLiteral("ZIP64: 产出含 ZIP64 中央目录记录"),
+          containsBytes(raw, QByteArray::fromHex("504b0606")));
+    check(QStringLiteral("ZIP64: 产出含 ZIP64 定位记录"),
+          containsBytes(raw, QByteArray::fromHex("504b0607")));
+
+    ArchiveInfo info;
+    QString e1;
+    const bool listed = engine->list(zip, QString(), info, e1);
+    check(QStringLiteral("ZIP64: 自读回条目数正确"), listed && info.entryCount >= 5, e1);
+
+    ExtractOptions eo;
+    eo.archivePath = zip;
+    eo.destDir = tmp.path() + QStringLiteral("/out");
+    eo.overwrite = OverwritePolicy::Overwrite;
+    QString e2;
+    const bool ok = engine->extract(eo, {}, {}, e2);
+    check(QStringLiteral("ZIP64: 解压成功"), ok, e2);
+    const QString outRoot = eo.destDir + QLatin1Char('/') + QFileInfo(src).fileName();
+    check(QStringLiteral("ZIP64: 中文条目内容一致"),
+          readFile(outRoot + QStringLiteral("/中文 文件名.txt")) == QByteArray("中文内容测试\n"));
+#ifdef Q_OS_WIN
+    const QString bsdtar = QDir::fromNativeSeparators(
+        qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows")) +
+        QStringLiteral("/System32/tar.exe"));
+    check(QStringLiteral("ZIP64: 系统 bsdtar 可读取 ZIP64 包"),
+          runCmd(bsdtar, { QStringLiteral("-tf"), zip }));
+#endif
+}
+
+// 真实 >4GiB 压测（默认跳过）：验证 qint64 尺寸/偏移在越过 32 位边界时不溢出。
+// 由环境变量 YASUO_STRESS_ZIP64=1 启用；可用 YASUO_STRESS_DIR 指定落盘目录。
+void testZip64Large(IArchiveEngine* engine) {
+    if (qEnvironmentVariableIsEmpty("YASUO_STRESS_ZIP64")) {
+        out << "[SKIP] >4GiB 压测未启用（设置 YASUO_STRESS_ZIP64=1 可运行）\n";
+        return;
+    }
+    if (!engine->caps().zip64) { out << "[SKIP] 引擎未声明 ZIP64，跳过 >4GiB 压测\n"; return; }
+
+    const QString base = qEnvironmentVariable("YASUO_STRESS_DIR");
+    QTemporaryDir tmp(base.isEmpty() ? QString() : base + QStringLiteral("/yasuo-stress-XXXXXX"));
+    if (!tmp.isValid()) { check(QStringLiteral("ZIP64 大文件: 创建临时目录"), false); return; }
+
+    const QString src = tmp.path() + QStringLiteral("/large.bin");
+    const qint64 kSize = static_cast<qint64>(4) * 1024 * 1024 * 1024 + 1024 * 1024; // 4GiB + 1MiB
+    {
+        QFile f(src);
+        if (!f.open(QIODevice::ReadWrite) || !f.resize(kSize)) {
+            check(QStringLiteral("ZIP64 大文件: 建立 >4GiB 文件"), false, f.errorString());
+            return;
+        }
+    }
+    check(QStringLiteral("ZIP64 大文件: 文件大小 >4GiB"), QFileInfo(src).size() == kSize);
+
+    CompressOptions co;
+    co.archivePath = tmp.path() + QStringLiteral("/large.zip");
+    co.inputs = QStringList{ src };
+    co.format = Format::Zip;
+    co.level = 1;
+    QString err;
+    QElapsedTimer t; t.start();
+    check(QStringLiteral("ZIP64 大文件: 压缩 >4GiB"), engine->compress(co, {}, {}, err), err);
+    out << "       压缩耗时 " << t.elapsed() << " ms\n";
+
+    ArchiveInfo info;
+    QString e2;
+    const bool listed = engine->list(co.archivePath, QString(), info, e2);
+    bool sizeOk = false;
+    for (const EntryInfo& e : info.entries)
+        if (e.path.endsWith(QStringLiteral("large.bin")) && e.size == kSize) sizeOk = true;
+    check(QStringLiteral("ZIP64 大文件: 列目录 size 未溢出（>4GiB 正确）"), listed && sizeOk, e2);
+
+    QString e3;
+    QElapsedTimer t2; t2.start();
+    check(QStringLiteral("ZIP64 大文件: 完整性测试读到末尾"),
+          engine->test(co.archivePath, QString(), {}, {}, e3), e3);
+    out << "       测试耗时 " << t2.elapsed() << " ms\n";
+}
+
 // 7-Zip 只读后端端到端验证：用 szCreate7z（经 7z.dll 的 IOutArchive）造真实 7z
 // 样本，再经 SevenZipEngine（或按魔数分派的引擎）读回，覆盖 list/extract/test
 // 以及「加密内容 + 加密文件名」场景。直接驱动 7z.dll 能证明后端不是空壳。
@@ -689,6 +794,8 @@ int main(int argc, char* argv[]) {
     testFormats(best, src);
     testRemoveEntries(best, src);
     testLargeFile(best);
+    testZip64(best, src);
+    testZip64Large(best);
 
     // 两个引擎都要过第三方校验：只测 best() 会掩盖内置引擎的本地文件头缺陷
     // （libarchive 成为主引擎时，内置引擎的 ZIP 从未被 bsdtar 验证过）。

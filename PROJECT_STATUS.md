@@ -1,6 +1,6 @@
 # 压索 Yasuo Compressor（open-rarzip）项目状态记录
 
-> 更新：2026-11-11 22:2x（换账号接续会话）
+> 更新：2026-11-12 23:5x（7-Zip 后端 + CLI 密码/格式 + ZIP64 实测）
 > 分工：`README.md` 讲「是什么、怎么用、路线图」；本文件讲「代码真实现状、实测证据、风险与未完成工作」，是状态核查的单一事实来源。
 > 依据：本仓库 `CMakeLists.txt`、`src/`、`test_engine.cpp`、`build_deps_local.sh`、`deps/dist`、`.github/workflows/build.yml`、`installer/setup.iss`、`THIRD_PARTY_NOTICES.txt`、git 状态与本机实测输出。
 
@@ -10,8 +10,8 @@
 | 版本 / 许可 | `project(YasuoCompressor VERSION 2.0.0)`；主程序 MIT |
 | 技术栈 | Qt 6（Core / Widgets / Network / Concurrent）、CMake ≥ 3.20、Ninja、libarchive 3.9.0（静态，本地构建）、Windows CNG/bcrypt（AES 后端）、zlib |
 | 代码规模 | `src/` 约 26 个文件 / 约 4900 行；另有 `test_engine.cpp` 约 370 行、安装包 / CI / 图标脚本 / 资源 |
-| 仓库状态 | 只有 `33f189e Initial commit`、`a64c9e9 feat: 导入 Qt6 源码并完善 .gitignore`；**v2.0 的 `src/core`、`src/ui`、`src/shell`、`.github`、`installer`、`scripts`、`THIRD_PARTY_NOTICES.txt` 全未跟踪**，旧 `src/*.cpp` 删除未提交 |
-| 构建状态 | 本机全格式路径与零依赖回退路径均 configure / build **exit 0**；自测 41 项 + 22 项全通过；CTest 通过 |
+| 仓库状态 | 已提交并推送：`333b61e`（P0/P1 重构）与 `5fec8f2`（7-Zip SDK 后端），`git status` 干净，与 `origin/main` 同步 |
+| 构建状态 | 本机全格式路径与零依赖回退路径均 configure / build **exit 0**；默认自测 **93 项全过**；`YASUO_STRESS_ZIP64=1` 时 **97 项**（含真实 >4GiB 压测）；CTest 通过 |
 
 ---
 
@@ -146,3 +146,17 @@
 - **最新实测**：全格式 `build/v2` 自测 **71 PASS / 0 FAIL**，零依赖 `build/fallback` **33 PASS / 0 FAIL**，两套 `ctest` 均通过；`README.md` 已同步能力矩阵、打包说明、路线图与自测数字。
 
 仍未关闭：P0 #1（git 备份，v2.0 新目录依旧未跟踪、旧文件删除未提交）、#3（ZIP64 / >4GB 实测）、#4（RAR / RAR5 真实样本集）、P1 #5（7-Zip SDK 后端）、#8（Shell 集成实机验证）、#10（`continue` / `skip` 分支零静默审计）、P2 / P3。
+
+---
+
+## 九、续作（2026-11-12 23:00~23:40）：7-Zip 后端、CLI 密码/格式、ZIP64 实测
+
+> 本轮为单会话连续开发，成果已提交并推送。
+
+- **P1 #5 7-Zip SDK 后端（关闭）**：运行时加载 `7z.dll`，`SevenZipEngine` 实现 `IArchiveEngine` 只读（`list/extract/test`），`Engines::best(path)` 按魔数把 7z / RAR / RAR5 分派到 7-Zip 解码器（含加密文件名、固实、分卷）；CMake 编译 7-Zip 辅助源并 POST_BUILD 部署 `7z.dll`。测试用 `szCreate7z`（经 `IOutArchive`）现场造明文/加密 7z 并读回验证。
+- **CLI 能力补齐**：`--cli` 新增 `-p/--password`、`--format`、`--encryption`、`--level`、`--overwrite`、`--zip64` 与 `--help`；读操作改用 `Engines::best(path)`（RAR/7z 走 7-Zip 后端），创建仍走可写主引擎；`CompressOptions` 增加 `forceZip64`。
+- **P0 #3 ZIP64 / >4GB（关闭）**：
+  - 新增 `testZip64`：经 `zip:zip64=1` 强制生成 ZIP64，断言产出含 ZIP64 EOCD（`0x06064b50`）与定位器（`0x07064b50`），自读回内容一致，系统 `bsdtar` 亦可读取。
+  - 新增 `testZip64Large`（`YASUO_STRESS_ZIP64=1` 触发）：真实 **4GiB+1MiB** 文件压缩/列目录/完整性测试，`EntryInfo.size` 精确等于 4GiB+1MiB，无 32 位溢出；实测压缩 7.5s、完整性测试 1.3s，全绿。
+- **最新实测**：默认自测 **93 PASS / 0 FAIL**；压力模式 **97 PASS / 0 FAIL**；`YasuoCompressor.exe` + `test_engine.exe` 干净编译。
+- **仍未关闭**：P0 #4（RAR/RAR5 真实样本集——RAR 分支已接线但仓库无样本，需外部合法样本）、P1 #8（Shell 集成实机验证）、P1 #10（零静默审计：两引擎仍有约 29 处 `continue`/`skip`，部分仅计数未回传提示）、P1 #9（ISCC 出包实机）、P2 / P3。

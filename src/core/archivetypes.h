@@ -65,6 +65,7 @@ struct CompressOptions {
     bool followSymlinks = false;
     bool deleteAfter = false;
     bool verifyAfter = false;
+    bool forceZip64 = false;          // ZIP：强制生成 ZIP64 记录（用于 >4GB / 大条目压测）
 };
 
 struct ExtractOptions {
@@ -103,6 +104,8 @@ QString formatSuffix(Format f);
 QString formatFilterName(Format f);        // libarchive 的 archive_write_set_format_by_name 参数
 QString formatCompressionFilter(Format f); // libarchive 的 filter 名
 Format  formatFromSuffix(const QString& path);
+Format  formatFromName(const QString& name);     // 解析 "zip"/"7z"/"tar.gz" 等，大小写不敏感
+Encryption encryptionFromName(const QString& name); // 解析 "zipcrypto"/"aes128"/"aes256"
 QString encryptionName(Encryption e);
 QString humanBytes(qint64 bytes);
 

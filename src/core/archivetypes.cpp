@@ -80,6 +80,36 @@ Format formatFromSuffix(const QString& path) {
     return Format::Unknown;
 }
 
+Format formatFromName(const QString& name) {
+    const QString n = name.trimmed().toLower();
+    if (n.isEmpty()) return Format::Auto;
+    if (n == QLatin1String("zip")) return Format::Zip;
+    if (n == QLatin1String("7z") || n == QLatin1String("sevenzip") || n == QLatin1String("7zip"))
+        return Format::SevenZip;
+    if (n == QLatin1String("tar")) return Format::Tar;
+    if (n == QLatin1String("tar.gz") || n == QLatin1String("tgz")) return Format::TarGz;
+    if (n == QLatin1String("tar.bz2") || n == QLatin1String("tbz2")) return Format::TarBz2;
+    if (n == QLatin1String("tar.xz") || n == QLatin1String("txz")) return Format::TarXz;
+    if (n == QLatin1String("tar.zst") || n == QLatin1String("tzst")) return Format::TarZst;
+    if (n == QLatin1String("gz") || n == QLatin1String("gzip")) return Format::Gz;
+    if (n == QLatin1String("bz2") || n == QLatin1String("bzip2")) return Format::Bz2;
+    if (n == QLatin1String("xz")) return Format::Xz;
+    if (n == QLatin1String("zst") || n == QLatin1String("zstd")) return Format::Zst;
+    if (n == QLatin1String("rar")) return Format::Rar;
+    if (n == QLatin1String("auto")) return Format::Auto;
+    return Format::Unknown;
+}
+
+Encryption encryptionFromName(const QString& name) {
+    const QString n = name.trimmed().toLower();
+    if (n == QLatin1String("aes256") || n == QLatin1String("aes-256")) return Encryption::Aes256;
+    if (n == QLatin1String("aes128") || n == QLatin1String("aes-128")) return Encryption::Aes128;
+    if (n == QLatin1String("zipcrypto") || n == QLatin1String("zipcrypt") || n == QLatin1String("legacy"))
+        return Encryption::ZipCrypto;
+    if (n.isEmpty() || n == QLatin1String("none")) return Encryption::None;
+    return Encryption::None;
+}
+
 QString encryptionName(Encryption e) {
     switch (e) {
     case Encryption::ZipCrypto: return QStringLiteral("ZipCrypto（兼容旧软件，强度低）");

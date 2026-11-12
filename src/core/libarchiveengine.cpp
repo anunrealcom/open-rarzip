@@ -331,6 +331,8 @@ public:
         (void)archive_write_set_option(a, nullptr, "compression-level", level.constData());
         if (opt.format == Format::Zip) {
             (void)archive_write_set_option(a, "zip", "threads", threadCount.constData());
+            if (opt.forceZip64)
+                (void)archive_write_set_option(a, "zip", "zip64", "1");
         } else if (opt.format == Format::TarZst || opt.format == Format::Zst) {
             (void)archive_write_set_option(a, "zstd", "threads", threadCount.constData());
         }
