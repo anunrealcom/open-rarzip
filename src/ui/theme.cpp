@@ -3,9 +3,67 @@
 #include <QApplication>
 #include <QSettings>
 #include <QMap>
+#include <QColor>
+#include <QDir>
+#include <QHash>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPen>
+#include <QPixmap>
+#include <QStandardPaths>
 
 namespace yasuo {
 namespace Theme {
+
+namespace {
+
+// QComboBox 的下拉箭头无法用纯 QSS 画出三角形，这里用 QPainter 生成一枚
+// 与主题同色的 chevron PNG（2x 采样），缓存后供样式表 url() 引用。
+QString arrowAsset(const QColor& color, int size, bool up) {
+    static QHash<QString, QString> cache;
+    const QString key = color.name() + QLatin1Char('/') + QString::number(size)
+                        + (up ? QStringLiteral("u") : QStringLiteral("d"));
+    if (cache.contains(key)) return cache.value(key);
+
+    QPixmap pm(size * 2, size * 2);
+    pm.fill(Qt::transparent);
+    {
+        QPainter g(&pm);
+        g.setRenderHint(QPainter::Antialiasing, true);
+        const qreal w = size * 2.0;
+        QPen pen(color);
+        pen.setWidthF(w * 0.12);
+        pen.setCapStyle(Qt::RoundCap);
+        pen.setJoinStyle(Qt::RoundJoin);
+        g.setPen(pen);
+        QPainterPath path;
+        if (up) {
+            path.moveTo(w * 0.28, w * 0.62);
+            path.lineTo(w * 0.50, w * 0.38);
+            path.lineTo(w * 0.72, w * 0.62);
+        } else {
+            path.moveTo(w * 0.28, w * 0.38);
+            path.lineTo(w * 0.50, w * 0.62);
+            path.lineTo(w * 0.72, w * 0.38);
+        }
+        g.drawPath(path);
+    }
+
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (dir.isEmpty()) dir = QDir::tempPath();
+    QDir().mkpath(dir);
+    const QString file = dir + QStringLiteral("/yihuan-ui-chevron-%1-%2%3.png")
+                                     .arg(color.name().mid(1)).arg(size)
+                                     .arg(up ? QStringLiteral("up") : QStringLiteral("down"));
+
+    QString qss;
+    if (pm.save(file, "PNG"))
+        qss = QString(file).replace(QLatin1Char('\\'), QLatin1Char('/'));
+    cache.insert(key, qss);
+    return qss;
+}
+
+} // namespace
 
 Palette palette(bool dark) {
     Palette p;
@@ -57,6 +115,9 @@ void apply(bool dark) {
 
 QString styleSheet(bool dark) {
     const Palette p = palette(dark);
+    // 主题同色的下拉箭头资源（生成失败时替换为空，退化为无箭头而非崩溃）
+    const QString arrowDown = arrowAsset(QColor(p.sub), 12, false);
+    const QString arrowUp = arrowAsset(QColor(p.sub), 10, true);
     QString css = QStringLiteral(R"(
 QWidget { font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; font-size: 13px; color: @TEXT@; }
 QMainWindow, QWidget#pageRoot { background: @PAGE@; }
@@ -88,7 +149,14 @@ QLineEdit, QComboBox, QSpinBox, QPlainTextEdit {
     selection-background-color: @ACCENT@; selection-color: #FFFFFF;
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus { border-color: @ACCENT@; }
-QComboBox::drop-down { border: none; width: 22px; }
+QComboBox { padding-right: 26px; }
+QComboBox::drop-down { border: none; width: 24px; subcontrol-origin: padding; subcontrol-position: center right; }
+QComboBox::down-arrow { image: url(@ARROW_DOWN@); width: 11px; height: 11px; }
+QSpinBox { padding-right: 26px; }
+QSpinBox::up-button { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; height: 50%; border: none; background: transparent; }
+QSpinBox::down-button { subcontrol-origin: padding; subcontrol-position: bottom right; width: 22px; height: 50%; border: none; background: transparent; }
+QSpinBox::up-arrow { image: url(@ARROW_UP@); width: 10px; height: 10px; }
+QSpinBox::down-arrow { image: url(@ARROW_DOWN@); width: 10px; height: 10px; }
 QComboBox QAbstractItemView { background: @CARD@; color: @TEXT@; border: 1px solid @BORDER@;
     selection-background-color: @ACTIVE@; selection-color: @ACCENT@; outline: 0; }
 QListWidget, QTreeView, QTableView {
@@ -129,7 +197,9 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
         { QStringLiteral("@DANGER@"), p.danger },
         { QStringLiteral("@ACTIVE@"), p.navActive },
         { QStringLiteral("@SOFT@"),   p.soft },
-        { QStringLiteral("@ALT@"),    p.tableAlt }
+        { QStringLiteral("@ALT@"),    p.tableAlt },
+        { QStringLiteral("@ARROW_DOWN@"), arrowDown },
+        { QStringLiteral("@ARROW_UP@"),   arrowUp }
     };
     for (auto it = tokens.constBegin(); it != tokens.constEnd(); ++it)
         css.replace(it.key(), it.value());
